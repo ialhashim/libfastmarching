@@ -1,6 +1,7 @@
 #include "libfastmarching.h"
 
 #include "fmm/fmm.hpp"
+#include "fm2/fm2star.hpp"
 #include "fmm/fsm.hpp"
 #include "gradientdescent/gradientdescent.hpp"
 #include "io/maploader.hpp"
@@ -41,12 +42,44 @@ static nDGridMap<FMCell, 2> makeGrid(QImage input)
 	return grid;
 }
 
-QImage libfastmarching::fmm(QImage input, QPoint from, QPoint to, Path & path)
+static QImage drawGrid(nDGridMap<FMCell, 2>& grid, bool isValue = true)
 {
+    std::array<unsigned int,2> d = grid.getDimSizes();
+    double max_val = grid.getMaxValue();
+    CImg<double> img(d[0],d[1],1,1,0);
+
+    if(isValue)
+    {
+        cimg_forXY(img,x,y) { img(x,y) = grid[img.width()*(img.height()-y-1)+x].getValue()/max_val*255; }
+    }
+    else
+    {
+        cimg_forXY(img,x,y) { img(x,y) = grid[img.width()*(img.height()-y-1)+x].getOccupancy()*255; }
+    }
+
+    img.map( CImg<double>::cool_LUT256() );
+
+    QImage imgQt(img.width(), img.height(), QImage::Format_ARGB32);
+
+    cimg_forXY( img, x, y )
+    {
+       auto R = img( x, y, 0 );
+       auto G = img( x, y, 1 );
+       auto B = img( x, y, 2 );
+       imgQt.setPixel( x, y, qRgb(R,G,B) );
+    }
+
+    return imgQt;
+}
+
+QImage libfastmarching::fmm(QImage input, QPoint from, QPoint to, Path & path, bool isVisualize)
+{
+    QImage output;
+
 	auto grid = makeGrid(input);
 
-	std::array<unsigned int, 2> init_points, goal;
-	unsigned int goal_idx;
+    std::array<unsigned int, 2> init_points, goal;
+    unsigned int goal_idx;
 
     init_points[0] = from.x();
 	init_points[1] = (input.height() - 1) - from.y();
@@ -54,57 +87,89 @@ QImage libfastmarching::fmm(QImage input, QPoint from, QPoint to, Path & path)
     goal[0] = to.x();
 	goal[1] = (input.height() - 1) - to.y();
 
+    // Compute using the Fast Marching Method (FMM)
     FMM< nDGridMap<FMCell, 2> > fmm;
     fmm.setEnvironment(&grid);
     fmm.setInitialAndGoalPoints(init_points, goal);
     fmm.compute();
 
-    QImage output;
-    {
-        std::array<unsigned int,2> d = grid.getDimSizes();
-        double max_val = grid.getMaxValue();
-        CImg<double> img(d[0],d[1],1,1,0);
-        // Filling the image flipping Y dim. We want now top left to be the (0,0).
-        cimg_forXY(img,x,y) { img(x,y) = grid[img.width()*(img.height()-y-1)+x].getValue()/max_val*255; }
-        img.map( CImg<double>::jet_LUT256() );
-        //img.display("", false);
+    if(isVisualize) output = drawGrid( grid );
 
-        QImage imgQt(img.width(), img.height(), QImage::Format_ARGB32);
-
-        cimg_forXY( img, x, y )
-        {
-           auto R = img( x, y, 0 );
-           auto G = img( x, y, 1 );
-           auto B = img( x, y, 2 );
-           imgQt.setPixel( x, y, qRgb(R,G,B) );
-        }
-
-        output = imgQt;
-    }
-
-	std::vector <double> path_velocity; // Velocities profile
-	GradientDescent< nDGridMap<FMCell, 2> > grad;	
-	grid.coord2idx(goal, goal_idx);
-	grad.apply(grid, goal_idx, path, path_velocity);
-
+    // Compute path
+    std::vector <double> path_velocity;
+    GradientDescent< nDGridMap<FMCell, 2> > grad;
+    grid.coord2idx(goal, goal_idx);
+    grad.apply(grid, goal_idx, path, path_velocity);
     Q_UNUSED(grad);
 
-	// Fix path's 'y'
-	for (auto & p : path) p[1] = (input.height() - 1) - p[1];
+    // Fix path's 'y'
+    for (auto & p : path) p[1] = (input.height() - 1) - p[1];
 
-	// Draw path
-	if (path.size())
-	{
-		QPainter painter(&output);
-		auto prev_p = path.front();
+    if( isVisualize )
+    {
+        // Draw path
+        if (path.size())
+        {
+            QPainter painter(&output);
+            auto prev_p = path.front();
 
-		painter.setPen(QPen(Qt::black, 3));
-		for (auto p : path){
-			painter.drawLine(QPoint(prev_p[0], prev_p[1]), QPoint(p[0], p[1]));
-			prev_p = p;
-		}
-	}
+            painter.setPen(QPen(Qt::black, 3));
+            for (auto p : path){
+                painter.drawLine(QPoint(prev_p[0], prev_p[1]), QPoint(p[0], p[1]));
+                prev_p = p;
+            }
+        }
+    }
+    return output;
+}
 
+QImage libfastmarching::fm2star(QImage input, QPoint from, QPoint to, libfastmarching::Path &path, bool isVisualize)
+{
+    QImage output;
+
+    auto grid = makeGrid(input);
+
+    std::vector<unsigned int> init_points_idx;
+    std::array<unsigned int,2> init_points, goal;
+    unsigned int init_idx, goal_idx;
+
+    init_points[0] = from.x();
+    init_points[1] = (input.height() - 1) - from.y();
+    grid.coord2idx(init_points, init_idx);
+    init_points_idx.push_back(init_idx);
+
+    goal[0] = to.x();
+    goal[1] = (input.height() - 1) - to.y();
+    grid.coord2idx(goal, goal_idx);
+
+    FM2Star< nDGridMap<FMCell, 2> > fm2star;
+    fm2star.setEnvironment(&grid);
+    fm2star.setInitialAndGoalPoints(init_points_idx, goal_idx);
+    fm2star.compute();
+
+    if(isVisualize) output = drawGrid( grid, false );
+
+    std::vector <double> path_velocity;
+    fm2star.computePath(&path, &path_velocity);
+
+    // Fix path's 'y'
+    for (auto & p : path) p[1] = (input.height() - 1) - p[1];
+
+    if( isVisualize )
+    {
+        // Draw path
+        if (path.size())
+        {
+            QPainter painter(&output);
+            auto prev_p = path.front();
+
+            painter.setPen(QPen(Qt::black, 3));
+            for (auto p : path){
+                painter.drawLine(QPoint(prev_p[0], prev_p[1]), QPoint(p[0], p[1]));
+                prev_p = p;
+            }
+        }
+    }
     return output;
 }
 

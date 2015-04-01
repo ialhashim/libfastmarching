@@ -51,7 +51,7 @@
 template < class grid_t, class heap_t = FMDaryHeap<FMCell> > class FM2Star : public FM2<grid_t, heap_t> {
 
     /** \brief Path type encapsulation. */
-    typedef std::vector< std::array<double, grid_t::getNDims()> > path_t;
+    typedef std::vector< std::array<double, 2> > path_t;
     
     /** \brief Shorthand of the base clase. */
     typedef FM2<grid_t, heap_t > FM2Base;
@@ -92,7 +92,7 @@ template < class grid_t, class heap_t = FMDaryHeap<FMCell> > class FM2Star : pub
             computeVelocitiesMap();
 
             // Reset time counter so that time_ returns the time of the second wave.
-            start_ = std::chrono::steady_clock::now();
+            //start_ = std::chrono::steady_clock::now();
 
             // According to the theoretical basis the wave is expanded from the goal point to the initial point.
             std::vector <unsigned int> wave_init;

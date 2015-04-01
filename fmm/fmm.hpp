@@ -181,7 +181,7 @@ template < class grid_t, class heap_t = FMDaryHeap<FMCell> >  class FMM : public
         /** \brief Computes euclidean distance between goal and rest of cells. */
         virtual void precomputeDistances
         () {
-            distances_.reserve(grid_->size());
+            distances_.resize(grid_->size(), 0);
             std::array <unsigned int, 2> coords;
             double dist = 0;
 

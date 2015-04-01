@@ -162,6 +162,8 @@ template < class grid_t, class heap_t = FMDaryHeap<FMCell> > class FM2 : public 
             path_t* path_ = p;
             GradientDescent< nDGridMap<FMCell, 2> > grad;
             grad.apply(*grid_,init_points_[0],*path_, *path_velocity, step);
+
+            (grad); // does nothing, avoids a warining
         }
 
         virtual void clear
