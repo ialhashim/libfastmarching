@@ -9,7 +9,12 @@ const  double utils::COMP_MARGIN = DBL_EPSILON * 1e5;
 
 using namespace std;
 
-static nDGridMap<FMCell, 2> makeGrid(QImage input)
+typedef FMCell CellType;
+typedef nDGridMap<FMCell, 2> GridType;
+Q_DECLARE_METATYPE( FMCell )
+Q_DECLARE_METATYPE( GridType )
+
+static GridType makeGrid(QImage input)
 {
 	nDGridMap<FMCell, 2> grid;
 
@@ -42,22 +47,21 @@ static nDGridMap<FMCell, 2> makeGrid(QImage input)
 	return grid;
 }
 
-static QImage drawGrid(nDGridMap<FMCell, 2>& grid, bool isValue = true)
+static QImage drawGrid(GridType& grid, bool isValue = true)
 {
     std::array<unsigned int,2> d = grid.getDimSizes();
     double max_val = grid.getMaxValue();
-    CImg<double> img(d[0],d[1],1,1,0);
+    CImg<double> img(d[0],d[1],3,1,0);
 
     if(isValue)
     {
         cimg_forXY(img,x,y) { img(x,y) = grid[img.width()*(img.height()-y-1)+x].getValue()/max_val*255; }
+        img.map( CImg<double>::cool_LUT256() );
     }
     else
     {
         cimg_forXY(img,x,y) { img(x,y) = grid[img.width()*(img.height()-y-1)+x].getOccupancy()*255; }
     }
-
-    img.map( CImg<double>::cool_LUT256() );
 
     QImage imgQt(img.width(), img.height(), QImage::Format_ARGB32);
 
@@ -214,4 +218,27 @@ QImage libfastmarching::fsm(QImage input, DistanceGrid & distances)
 	}
 
 	return output;
+}
+
+libfastmarching::DynamicGrid::DynamicGrid(QImage input)
+{
+    walls = input;
+}
+
+void libfastmarching::DynamicGrid::modifyWalls(libfastmarching::Path path, int thickness)
+{
+    QPolygon qpoly;
+    for(auto p : path) qpoly << QPoint(p[0], p[1]);
+
+    QPainter p(&walls);
+    p.setRenderHint(QPainter::Antialiasing, false);
+    p.setPen(QPen(Qt::black, thickness, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    p.drawPolyline(qpoly);
+}
+
+libfastmarching::Path libfastmarching::DynamicGrid::bestPath(QPoint from, QPoint to, QImage &visualization)
+{
+    libfastmarching::Path resultingPath;
+    visualization = fm2star(walls, from, to, resultingPath, true);
+    return resultingPath;
 }
